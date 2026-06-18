@@ -1,6 +1,6 @@
 import { Node, Edge } from './graphData';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'https://twelve-grapes-build.loca.lt';
 
 export interface APIPath {
   nodes: Node[];
