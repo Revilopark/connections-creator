@@ -1,10 +1,158 @@
 import { useState, useCallback, useEffect } from 'react';
 import { nodes, findPaths, getEdgesForPath, generateNarrative, generateSerendipityScore, nodeColorMap, Node, Edge } from './lib/graphData';
 import { api, APIPath } from './lib/api';
-import { ConnectionPath } from './components/ConnectionPath';
-import { ShareCard } from './components/ShareCard';
-import { Search, Shuffle, Share2, BookOpen, Sparkles, Zap, Eye, Flame, Gem, ArrowRight, Server, ServerOff } from 'lucide-react';
+import { Search, Shuffle, Share2, BookOpen, Sparkles, Zap, Eye, Flame, Gem, ArrowRight, Server, ServerOff, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Midnight Galaxy Theme
+const THEME = {
+  bg: '#0f0c29',
+  bgGradient: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
+  card: 'rgba(43, 30, 62, 0.8)',
+  cardBorder: 'rgba(164, 144, 194, 0.2)',
+  cardHover: 'rgba(74, 78, 143, 0.5)',
+  text: '#e6e6fa',
+  textMuted: '#a490c2',
+  accent: '#c9a227',
+  accent2: '#4a4e8f',
+  lavender: '#a490c2',
+  silver: '#e6e6fa',
+};
+
+function InventionCard({ node, selected, onClick }: { node: Node; selected: boolean; onClick: () => void }) {
+  return (
+    <motion.div
+      whileHover={{ scale: 1.03, y: -4 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all duration-300 ${
+        selected 
+          ? 'border-[#c9a227] shadow-lg shadow-[#c9a227]/30' 
+          : 'border-[rgba(164,144,194,0.2)] hover:border-[rgba(164,144,194,0.5)]'
+      }`}
+      style={{ background: THEME.card }}
+    >
+      <div className="aspect-[4/3] relative overflow-hidden">
+        {node.imageUrl ? (
+          <img 
+            src={node.imageUrl} 
+            alt={node.name}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-[#2b1e3e] to-[#4a4e8f] flex items-center justify-center">
+            <Sparkles className="w-8 h-8 text-[#a490c2] opacity-50" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0f0c29] via-transparent to-transparent" />
+        <div className="absolute bottom-2 left-2 right-2">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#4a4e8f]/80 text-[#e6e6fa] font-medium">
+            {node.year > 0 ? node.year : `${Math.abs(node.year)} BC`}
+          </span>
+        </div>
+      </div>
+      <div className="p-3">
+        <h3 className="text-sm font-semibold text-[#e6e6fa] truncate">{node.name}</h3>
+        <p className="text-xs text-[#a490c2] mt-1 line-clamp-2">{node.summary}</p>
+      </div>
+      {selected && (
+        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#c9a227] flex items-center justify-center">
+          <Sparkles className="w-3 h-3 text-[#0f0c29]" />
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function ConnectionStep({ node, edge, index, isLast }: { node: Node; edge?: Edge; index: number; isLast: boolean }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.15 }}
+      className="flex items-start gap-4"
+    >
+      <div className="flex flex-col items-center">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#4a4e8f] to-[#2b1e3e] border-2 border-[#a490c2] flex items-center justify-center text-sm font-bold text-[#e6e6fa]">
+          {index + 1}
+        </div>
+        {!isLast && (
+          <div className="w-0.5 h-16 bg-gradient-to-b from-[#a490c2] to-[#4a4e8f] mt-1" />
+        )}
+      </div>
+      <div className="flex-1 pb-6">
+        <div className="flex items-start gap-3">
+          {node.imageUrl && (
+            <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border border-[rgba(164,144,194,0.3)]">
+              <img src={node.imageUrl} alt={node.name} className="w-full h-full object-cover" loading="lazy" />
+            </div>
+          )}
+          <div>
+            <h4 className="text-base font-semibold text-[#e6e6fa]">{node.name}</h4>
+            <span className="text-xs text-[#a490c2]">{node.year > 0 ? node.year : `${Math.abs(node.year)} BC`} · {node.place}</span>
+            {edge && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="mt-2 text-sm text-[#a490c2] italic"
+              >
+                {edge.label}
+                {edge.surpriseFactor > 0.6 && (
+                  <span className="ml-2 text-xs text-[#c9a227]">✨ Surprise: {Math.round(edge.surpriseFactor * 100)}%</span>
+                )}
+              </motion.div>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ScoreCard({ label, value, icon: Icon, color, delay }: { label: string; value: number; icon: any; color: string; delay: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay }}
+      className="rounded-xl p-4 border border-[rgba(164,144,194,0.2)]"
+      style={{ background: THEME.card }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${color}20` }}>
+          <Icon className="w-4 h-4" style={{ color }} />
+        </div>
+        <span className="text-xs font-medium text-[#a490c2] uppercase tracking-wider">{label}</span>
+      </div>
+      <div className="h-2 bg-[#0f0c29] rounded-full overflow-hidden">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${value}%` }}
+          transition={{ duration: 1.2, delay: delay + 0.2, ease: "easeOut" }}
+          className="h-full rounded-full"
+          style={{ backgroundColor: color }}
+        />
+      </div>
+      <div className="mt-2 flex justify-between items-center">
+        <span className="text-lg font-bold" style={{ color }}>{Math.round(value)}%</span>
+        <div className="flex gap-0.5">
+          {[...Array(5)].map((_, i) => (
+            <div 
+              key={i} 
+              className="w-1.5 h-1.5 rounded-full" 
+              style={{ background: i < Math.round(value / 20) ? color : 'rgba(164,144,194,0.2)' }}
+            />
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function App() {
   const [startId, setStartId] = useState('');
@@ -18,23 +166,39 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [minSteps, setMinSteps] = useState(5);
   const [maxSteps, setMaxSteps] = useState(10);
-
   const [apiAvailable, setApiAvailable] = useState<boolean | null>(null);
-  const [apiNodes, setApiNodes] = useState<Node[] | null>(null);
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
+  const [filterTag, setFilterTag] = useState<string | null>(null);
 
-  // Check API availability on mount
   useEffect(() => {
     api.checkAvailability().then(setApiAvailable);
   }, []);
 
-  // Load nodes from API if available
-  useEffect(() => {
-    if (apiAvailable) {
-      api.getNodes().then(setApiNodes).catch(() => setApiAvailable(false));
-    }
-  }, [apiAvailable]);
+  const inventionNodes = nodes.filter(n => n.type === 'invention' || n.type === 'discovery');
+  const tags = Array.from(new Set(inventionNodes.flatMap(n => n.tags)));
+  const filteredNodes = filterTag ? inventionNodes.filter(n => n.tags.includes(filterTag)) : inventionNodes;
 
-  const displayNodes = apiNodes || nodes;
+  const selectPath = useCallback((path: Node[], edges?: Edge[], apiScores?: APIPath['scores']) => {
+    setSelectedPath(path);
+    if (edges) {
+      setSelectedEdges(edges);
+    } else {
+      setSelectedEdges(getEdgesForPath(path));
+    }
+    setNarrative(generateNarrative(path, edges || getEdgesForPath(path)));
+    if (apiScores) {
+      setScores({
+        serendipity: apiScores.serendipity,
+        curiosity: apiScores.curiosity,
+        synchronicity: apiScores.synchronicity,
+        fortuity: apiScores.fortuity,
+        materiality: apiScores.materiality,
+      });
+    } else {
+      setScores(generateSerendipityScore(path, edges || getEdgesForPath(path)));
+    }
+  }, []);
 
   const handleSearch = useCallback(async () => {
     if (!startId || !endId) return;
@@ -52,7 +216,6 @@ export default function App() {
           selectPath(convertedPaths[0], response.paths[0].edges, response.paths[0].scores);
         }
       } catch {
-        // Fallback to local
         const found = findPaths(startId, endId, minSteps, maxSteps);
         setPaths(found);
         if (found.length > 0) selectPath(found[0]);
@@ -65,31 +228,10 @@ export default function App() {
       }, 800);
     }
     setIsSearching(false);
-  }, [startId, endId, minSteps, maxSteps, apiAvailable]);
-
-  const selectPath = useCallback((path: Node[], edges?: Edge[], apiScores?: APIPath['scores']) => {
-    setSelectedPath(path);
-    if (edges) {
-      setSelectedEdges(edges);
-    } else {
-      setSelectedEdges(getEdgesForPath(path));
-    }
-    setNarrative(generateNarrative(path, edges || getEdgesForPath(path)));
-    if (apiScores) {
-      setScores({
-        serendipity: apiScores.serendipity / 100,
-        curiosity: apiScores.curiosity / 100,
-        synchronicity: apiScores.synchronicity / 100,
-        fortuity: apiScores.fortuity / 100,
-        materiality: apiScores.materiality / 100,
-      });
-    } else {
-      setScores(generateSerendipityScore(path, edges || getEdgesForPath(path)));
-    }
-  }, []);
+  }, [startId, endId, minSteps, maxSteps, apiAvailable, selectPath]);
 
   const handleRandom = useCallback(() => {
-    const inventions = displayNodes.filter(n => n.type === 'invention');
+    const inventions = inventionNodes;
     const idx1 = Math.floor(Math.random() * inventions.length);
     let idx2 = Math.floor(Math.random() * inventions.length);
     while (idx1 === idx2) idx2 = Math.floor(Math.random() * inventions.length);
@@ -127,124 +269,229 @@ export default function App() {
         }
       }, 600);
     }, 100);
-  }, [minSteps, maxSteps, selectPath, apiAvailable, displayNodes]);
+  }, [minSteps, maxSteps, selectPath, apiAvailable]);
+
+  const getSelectedNode = (id: string) => nodes.find(n => n.id === id);
 
   return (
-    <div className="min-h-screen bg-[#050510] text-[#e2e8f0] font-outfit relative">
-      <div className="starfield" />
+    <div 
+      className="min-h-screen text-[#e6e6fa] font-sans relative"
+      style={{ background: THEME.bgGradient }}
+    >
+      {/* Animated stars background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        {[...Array(50)].map((_, i) => (
+          <motion.div
+            key={i}
+            className="absolute w-1 h-1 bg-white rounded-full"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              opacity: Math.random() * 0.5 + 0.1,
+            }}
+            animate={{
+              opacity: [0.1, 0.5, 0.1],
+              scale: [1, 1.2, 1],
+            }}
+            transition={{
+              duration: Math.random() * 3 + 2,
+              repeat: Infinity,
+              delay: Math.random() * 2,
+            }}
+          />
+        ))}
+      </div>
       
-      <div className="relative z-10 max-w-7xl mx-auto px-4 py-8 md:py-12">
+      <div className="relative z-10 max-w-6xl mx-auto px-4 py-8 md:py-12">
         {/* Header */}
         <motion.header 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
+          className="text-center mb-10"
         >
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <Sparkles className="w-6 h-6 text-[#c9a227]" />
-            <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-[#e2e8f0]">
+          <motion.div 
+            className="flex items-center justify-center gap-3 mb-3"
+            whileHover={{ scale: 1.05 }}
+          >
+            <Sparkles className="w-7 h-7 text-[#c9a227]" />
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-[#e6e6fa]">
               Connections
             </h1>
-            <Sparkles className="w-6 h-6 text-[#c9a227]" />
-          </div>
-          <p className="text-[#64748b] text-sm md:text-base max-w-lg mx-auto">
-            Discover the hidden threads between human inventions. 
-            Every path reveals a story of serendipity, materiality, and creative convergence.
+            <Sparkles className="w-7 h-7 text-[#c9a227]" />
+          </motion.div>
+          <p className="text-[#a490c2] text-sm md:text-base max-w-lg mx-auto">
+            Discover the hidden threads between human inventions.
+            Every path reveals a story of serendipity and creative convergence.
           </p>
+          
+          {/* Connection Status */}
+          <div className="flex justify-center mt-4">
+            <div className={`inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border ${apiAvailable === true ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-400' : apiAvailable === false ? 'bg-amber-950/30 border-amber-800/50 text-amber-400' : 'bg-[#2b1e3e] border-[#4a4e8f] text-[#a490c2]'}`}>
+              {apiAvailable === true ? <Server className="w-3 h-3" /> : apiAvailable === false ? <ServerOff className="w-3 h-3" /> : <div className="w-3 h-3 rounded-full bg-[#a490c2] animate-pulse" />}
+              {apiAvailable === true ? 'Connected to MCP Server' : apiAvailable === false ? 'Offline Mode' : 'Checking connection...'}
+            </div>
+          </div>
         </motion.header>
 
-        {/* Connection Status */}
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex justify-center mb-4"
-        >
-          <div className={`flex items-center gap-2 text-xs px-3 py-1 rounded-full border ${apiAvailable === true ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-400' : apiAvailable === false ? 'bg-amber-950/30 border-amber-800/50 text-amber-400' : 'bg-[#0a0a1a] border-[#1e293b] text-[#475569]'}`}>
-            {apiAvailable === true ? <Server className="w-3 h-3" /> : apiAvailable === false ? <ServerOff className="w-3 h-3" /> : <div className="w-3 h-3 rounded-full bg-[#475569] animate-pulse" />}
-            {apiAvailable === true ? 'Connected to MCP Server' : apiAvailable === false ? 'Offline Mode' : 'Checking connection...'}
-          </div>
-        </motion.div>
-
-        {/* Search Panel */}
+        {/* Selection Panel */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-[#0a0a1a] border border-[#1e293b] rounded-xl p-6 mb-8 max-w-4xl mx-auto"
+          className="rounded-2xl p-6 mb-8 border border-[rgba(164,144,194,0.2)]"
+          style={{ background: THEME.card }}
         >
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-xs font-medium text-[#64748b] mb-2 uppercase tracking-wider">
-                From
-              </label>
-              <select 
-                value={startId} 
-                onChange={e => setStartId(e.target.value)}
-                className="w-full bg-[#050510] border border-[#1e293b] rounded-lg px-4 py-3 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#c9a227] transition-colors"
-              >
-                <option value="">Select an invention...</option>
-                {displayNodes.filter(n => n.type === 'invention').map(n => (
-                  <option key={n.id} value={n.id}>{n.name} ({n.year > 0 ? n.year : `${Math.abs(n.year)} BC`})</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[#64748b] mb-2 uppercase tracking-wider">
-                To
-              </label>
-              <select 
-                value={endId} 
-                onChange={e => setEndId(e.target.value)}
-                className="w-full bg-[#050510] border border-[#1e293b] rounded-lg px-4 py-3 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#c9a227] transition-colors"
-              >
-                <option value="">Select an invention...</option>
-                {displayNodes.filter(n => n.type === 'invention').map(n => (
-                  <option key={n.id} value={n.id}>{n.name} ({n.year > 0 ? n.year : `${Math.abs(n.year)} BC`})</option>
-                ))}
-              </select>
-            </div>
+          {/* Selected pair display */}
+          <div className="flex items-center justify-center gap-4 mb-6">
+            <button
+              onClick={() => { setShowFromPicker(true); setShowToPicker(false); }}
+              className={`flex items-center gap-3 px-5 py-3 rounded-xl border-2 transition-all ${startId ? 'border-[#c9a227] bg-[#c9a227]/10' : 'border-[rgba(164,144,194,0.3)] hover:border-[#a490c2]'}`}
+            >
+              {startId && getSelectedNode(startId)?.imageUrl ? (
+                <img src={getSelectedNode(startId)?.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-[#4a4e8f]/30 flex items-center justify-center">
+                  <Search className="w-5 h-5 text-[#a490c2]" />
+                </div>
+              )}
+              <div className="text-left">
+                <span className="text-xs text-[#a490c2] uppercase tracking-wider">From</span>
+                <p className="text-sm font-semibold text-[#e6e6fa]">{startId ? getSelectedNode(startId)?.name : 'Select invention...'}</p>
+              </div>
+            </button>
+            
+            <ArrowRight className="w-6 h-6 text-[#a490c2]" />
+            
+            <button
+              onClick={() => { setShowToPicker(true); setShowFromPicker(false); }}
+              className={`flex items-center gap-3 px-5 py-3 rounded-xl border-2 transition-all ${endId ? 'border-[#c9a227] bg-[#c9a227]/10' : 'border-[rgba(164,144,194,0.3)] hover:border-[#a490c2]'}`}
+            >
+              {endId && getSelectedNode(endId)?.imageUrl ? (
+                <img src={getSelectedNode(endId)?.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-[#4a4e8f]/30 flex items-center justify-center">
+                  <Search className="w-5 h-5 text-[#a490c2]" />
+                </div>
+              )}
+              <div className="text-left">
+                <span className="text-xs text-[#a490c2] uppercase tracking-wider">To</span>
+                <p className="text-sm font-semibold text-[#e6e6fa]">{endId ? getSelectedNode(endId)?.name : 'Select invention...'}</p>
+              </div>
+            </button>
           </div>
 
-          <div className="flex items-center gap-4 mb-4">
+          {/* Step controls */}
+          <div className="flex items-center justify-center gap-6 mb-6">
             <div className="flex items-center gap-2">
-              <label className="text-xs text-[#64748b]">Min steps:</label>
+              <span className="text-xs text-[#a490c2]">Min steps:</span>
               <input 
                 type="range" min="3" max="8" value={minSteps} 
                 onChange={e => setMinSteps(Number(e.target.value))}
                 className="w-24 accent-[#c9a227]"
               />
-              <span className="text-xs text-[#c9a227] w-4">{minSteps}</span>
+              <span className="text-xs text-[#c9a227] font-bold w-4">{minSteps}</span>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs text-[#64748b]">Max steps:</label>
+              <span className="text-xs text-[#a490c2]">Max steps:</span>
               <input 
                 type="range" min="6" max="15" value={maxSteps} 
                 onChange={e => setMaxSteps(Number(e.target.value))}
                 className="w-24 accent-[#c9a227]"
               />
-              <span className="text-xs text-[#c9a227] w-4">{maxSteps}</span>
+              <span className="text-xs text-[#c9a227] font-bold w-4">{maxSteps}</span>
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 max-w-md mx-auto">
             <button
               onClick={handleSearch}
               disabled={!startId || !endId || isSearching}
-              className="flex-1 bg-[#c9a227] text-[#050510] font-semibold py-3 px-6 rounded-lg hover:bg-[#d4b43a] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              className="flex-1 bg-gradient-to-r from-[#c9a227] to-[#d4a93a] text-[#0f0c29] font-bold py-3 px-6 rounded-xl hover:from-[#d4b43a] hover:to-[#e0b845] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#c9a227]/20"
             >
               <Search className="w-4 h-4" />
-              {isSearching ? 'Discovering paths...' : 'Find Connections'}
+              {isSearching ? 'Discovering...' : 'Find Connections'}
             </button>
             <button
               onClick={handleRandom}
               disabled={isSearching}
-              className="bg-[#0a0a1a] border border-[#1e293b] text-[#e2e8f0] font-medium py-3 px-5 rounded-lg hover:border-[#c9a227] disabled:opacity-40 transition-all flex items-center gap-2"
+              className="px-5 py-3 rounded-xl border border-[rgba(164,144,194,0.3)] text-[#e6e6fa] font-medium hover:border-[#a490c2] hover:bg-[rgba(164,144,194,0.1)] disabled:opacity-40 transition-all flex items-center gap-2"
             >
               <Shuffle className="w-4 h-4" />
               Random
             </button>
           </div>
         </motion.div>
+
+        {/* Invention Picker Modal */}
+        <AnimatePresence>
+          {(showFromPicker || showToPicker) && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-[#0f0c29]/90 backdrop-blur-sm flex items-center justify-center p-4"
+              onClick={() => { setShowFromPicker(false); setShowToPicker(false); }}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="w-full max-w-4xl max-h-[80vh] rounded-2xl border border-[rgba(164,144,194,0.2)] overflow-hidden flex flex-col"
+                style={{ background: THEME.card }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between p-4 border-b border-[rgba(164,144,194,0.2)]">
+                  <h2 className="text-lg font-semibold text-[#e6e6fa]">
+                    Select {showFromPicker ? 'Start' : 'End'} Invention
+                  </h2>
+                  <button onClick={() => { setShowFromPicker(false); setShowToPicker(false); }} className="p-2 hover:bg-[rgba(164,144,194,0.1)] rounded-lg transition-colors">
+                    <X className="w-5 h-5 text-[#a490c2]" />
+                  </button>
+                </div>
+                
+                {/* Tag filter */}
+                <div className="flex gap-2 p-4 overflow-x-auto border-b border-[rgba(164,144,194,0.1)]">
+                  <button
+                    onClick={() => setFilterTag(null)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${!filterTag ? 'bg-[#c9a227] text-[#0f0c29]' : 'bg-[#4a4e8f]/30 text-[#a490c2] hover:bg-[#4a4e8f]/50'}`}
+                  >
+                    All
+                  </button>
+                  {tags.map(tag => (
+                    <button
+                      key={tag}
+                      onClick={() => setFilterTag(tag === filterTag ? null : tag)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-all capitalize ${filterTag === tag ? 'bg-[#c9a227] text-[#0f0c29]' : 'bg-[#4a4e8f]/30 text-[#a490c2] hover:bg-[#4a4e8f]/50'}`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="overflow-y-auto p-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {filteredNodes.map(node => (
+                      <InventionCard
+                        key={node.id}
+                        node={node}
+                        selected={showFromPicker ? startId === node.id : endId === node.id}
+                        onClick={() => {
+                          if (showFromPicker) {
+                            setStartId(node.id);
+                            setShowFromPicker(false);
+                          } else {
+                            setEndId(node.id);
+                            setShowToPicker(false);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Results */}
         <AnimatePresence>
@@ -256,11 +503,23 @@ export default function App() {
               className="text-center py-16"
             >
               <div className="inline-flex items-center gap-3">
-                <div className="w-3 h-3 bg-[#c9a227] rounded-full animate-pulse" />
-                <div className="w-3 h-3 bg-[#8b5cf6] rounded-full animate-pulse delay-150" />
-                <div className="w-3 h-3 bg-[#06b6d4] rounded-full animate-pulse delay-300" />
+                <motion.div 
+                  className="w-4 h-4 bg-[#c9a227] rounded-full"
+                  animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                />
+                <motion.div 
+                  className="w-4 h-4 bg-[#8b5cf6] rounded-full"
+                  animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
+                />
+                <motion.div 
+                  className="w-4 h-4 bg-[#06b6d4] rounded-full"
+                  animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
+                />
               </div>
-              <p className="mt-4 text-[#64748b] text-sm">Tracing threads through the knowledge graph...</p>
+              <p className="mt-4 text-[#a490c2] text-sm">Tracing threads through the knowledge graph...</p>
             </motion.div>
           )}
 
@@ -271,28 +530,33 @@ export default function App() {
               transition={{ delay: 0.2 }}
               className="space-y-8"
             >
-              {/* Path Summary */}
-              <div className="bg-[#0a0a1a] border border-[#1e293b] rounded-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-[#e2e8f0]">
-                    Connection Path
-                  </h2>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setShowShare(true)}
-                      className="text-xs bg-[#0a0a1a] border border-[#1e293b] text-[#64748b] px-3 py-1.5 rounded-md hover:text-[#c9a227] hover:border-[#c9a227] transition-colors flex items-center gap-1"
-                    >
-                      <Share2 className="w-3 h-3" />
-                      Share
-                    </button>
+              {/* Path Visualization */}
+              <div className="rounded-2xl p-6 border border-[rgba(164,144,194,0.2)]" style={{ background: THEME.card }}>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-[#e6e6fa]">Connection Path</h2>
+                    <p className="text-sm text-[#a490c2]">{selectedPath.length} nodes · {selectedEdges.length} connections</p>
                   </div>
+                  <button
+                    onClick={() => setShowShare(true)}
+                    className="text-xs bg-[#4a4e8f]/30 border border-[rgba(164,144,194,0.2)] text-[#a490c2] px-4 py-2 rounded-xl hover:text-[#c9a227] hover:border-[#c9a227] transition-all flex items-center gap-2"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    Share
+                  </button>
                 </div>
                 
-                <ConnectionPath 
-                  path={selectedPath} 
-                  edges={selectedEdges} 
-                  onNodeClick={(node) => console.log(node)}
-                />
+                <div className="space-y-0">
+                  {selectedPath.map((node, i) => (
+                    <ConnectionStep
+                      key={node.id}
+                      node={node}
+                      edge={selectedEdges[i]}
+                      index={i}
+                      isLast={i === selectedPath.length - 1}
+                    />
+                  ))}
+                </div>
               </div>
 
               {/* Score Cards */}
@@ -303,31 +567,15 @@ export default function App() {
                   { key: 'synchronicity', label: 'Synchronicity', icon: Zap, color: '#06b6d4' },
                   { key: 'fortuity', label: 'Fortuity', icon: Flame, color: '#ef4444' },
                   { key: 'materiality', label: 'Materiality', icon: Gem, color: '#10b981' },
-                ].map(({ key, label, icon: Icon, color }) => (
-                  <motion.div 
+                ].map(({ key, label, icon, color }, i) => (
+                  <ScoreCard
                     key={key}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.3 + Object.keys(scores).indexOf(key) * 0.1 }}
-                    className="bg-[#0a0a1a] border border-[#1e293b] rounded-lg p-4"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Icon className="w-4 h-4" style={{ color }} />
-                      <span className="text-xs font-medium text-[#64748b]">{label}</span>
-                    </div>
-                    <div className="h-2 bg-[#050510] rounded-full overflow-hidden mb-1">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${scores[key as keyof typeof scores] * 100}%` }}
-                        transition={{ duration: 1, delay: 0.5 }}
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: color }}
-                      />
-                    </div>
-                    <span className="text-xs text-[#475569]">
-                      {Math.round(scores[key as keyof typeof scores] * 100)}%
-                    </span>
-                  </motion.div>
+                    label={label}
+                    value={scores[key as keyof typeof scores]}
+                    icon={icon}
+                    color={color}
+                    delay={0.3 + i * 0.1}
+                  />
                 ))}
               </div>
 
@@ -336,23 +584,22 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.6 }}
-                className="bg-[#0a0a1a] border border-[#1e293b] rounded-xl p-6"
+                className="rounded-2xl p-6 border border-[rgba(164,144,194,0.2)]" 
+                style={{ background: THEME.card }}
               >
                 <div className="flex items-center gap-2 mb-4">
                   <BookOpen className="w-5 h-5 text-[#c9a227]" />
-                  <h2 className="text-lg font-semibold text-[#e2e8f0]">The Story</h2>
+                  <h2 className="text-lg font-semibold text-[#e6e6fa]">The Story</h2>
                 </div>
-                <div className="prose prose-invert prose-sm max-w-none">
-                  <div className="text-[#94a3b8] leading-relaxed whitespace-pre-line">
-                    {narrative}
-                  </div>
+                <div className="text-[#a490c2] leading-relaxed whitespace-pre-line text-sm">
+                  {narrative}
                 </div>
               </motion.div>
 
               {/* Alternative Paths */}
               {paths.length > 1 && (
-                <div className="bg-[#0a0a1a] border border-[#1e293b] rounded-xl p-6">
-                  <h3 className="text-sm font-semibold text-[#64748b] uppercase tracking-wider mb-4">
+                <div className="rounded-2xl p-6 border border-[rgba(164,144,194,0.2)]" style={{ background: THEME.card }}>
+                  <h3 className="text-sm font-semibold text-[#a490c2] uppercase tracking-wider mb-4">
                     Alternative Paths ({paths.length - 1})
                   </h3>
                   <div className="space-y-2">
@@ -360,13 +607,14 @@ export default function App() {
                       <button
                         key={i}
                         onClick={() => selectPath(path)}
-                        className="w-full text-left bg-[#050510] border border-[#1e293b] rounded-lg p-3 hover:border-[#8b5cf6] transition-colors group"
+                        className="w-full text-left rounded-xl p-3 border border-[rgba(164,144,194,0.1)] hover:border-[#8b5cf6] transition-all group"
+                        style={{ background: 'rgba(15, 12, 41, 0.5)' }}
                       >
-                        <div className="flex items-center gap-2 text-xs text-[#475569] mb-1">
-                          <span className="text-[#8b5cf6]">Path {i + 2}</span>
-                          <span className="text-[#64748b]">{path.length} steps</span>
+                        <div className="flex items-center gap-2 text-xs text-[#475569] mb-2">
+                          <span className="text-[#8b5cf6] font-semibold">Path {i + 2}</span>
+                          <span className="text-[#a490c2]">{path.length} steps</span>
                         </div>
-                        <div className="flex items-center gap-1 flex-wrap text-sm text-[#94a3b8]">
+                        <div className="flex items-center gap-1 flex-wrap text-sm text-[#a490c2]">
                           {path.map((node, j) => (
                             <span key={node.id} className="flex items-center">
                               <span 
@@ -374,7 +622,7 @@ export default function App() {
                                 style={{ backgroundColor: nodeColorMap[node.type] }}
                               />
                               {node.name}
-                              {j < path.length - 1 && <ArrowRight className="w-3 h-3 mx-1 text-[#475569] group-hover:text-[#c9a227] transition-colors" />}
+                              {j < path.length - 1 && <ArrowRight className="w-3 h-3 mx-1 text-[#4a4e8f] group-hover:text-[#c9a227] transition-colors" />}
                             </span>
                           ))}
                         </div>
@@ -391,7 +639,7 @@ export default function App() {
       {/* Share Modal */}
       <AnimatePresence>
         {showShare && selectedPath && (
-          <ShareCard 
+          <ShareModal 
             path={selectedPath} 
             edges={selectedEdges} 
             scores={scores}
@@ -400,5 +648,72 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function ShareModal({ path, scores, onClose }: { path: Node[]; edges: Edge[]; scores: any; onClose: () => void }) {
+  const shareText = `I discovered a connection from ${path[0].name} to ${path[path.length - 1].name} in ${path.length} steps!\n\nSerendipity: ${Math.round(scores.serendipity)}%\nCuriosity: ${Math.round(scores.curiosity)}%\n\nCan you find a better path?`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-[#0f0c29]/90 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="w-full max-w-lg rounded-2xl border border-[rgba(164,144,194,0.2)] overflow-hidden"
+        style={{ background: THEME.card }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-[#e6e6fa]">Share Discovery</h3>
+            <button onClick={onClose} className="p-2 hover:bg-[rgba(164,144,194,0.1)] rounded-lg transition-colors">
+              <X className="w-5 h-5 text-[#a490c2]" />
+            </button>
+          </div>
+          
+          {/* Preview card */}
+          <div className="rounded-xl p-4 mb-4 border border-[rgba(164,144,194,0.2)]" style={{ background: 'linear-gradient(135deg, #2b1e3e, #4a4e8f)' }}>
+            <div className="flex items-center gap-3 mb-3">
+              {path[0].imageUrl && <img src={path[0].imageUrl} alt="" className="w-12 h-12 rounded-lg object-cover" />}
+              <ArrowRight className="w-4 h-4 text-[#c9a227]" />
+              {path[path.length - 1].imageUrl && <img src={path[path.length - 1].imageUrl} alt="" className="w-12 h-12 rounded-lg object-cover" />}
+            </div>
+            <p className="text-sm text-[#e6e6fa] font-medium">{path[0].name} → {path[path.length - 1].name}</p>
+            <p className="text-xs text-[#a490c2]">{path.length} steps · Serendipity {Math.round(scores.serendipity)}%</p>
+          </div>
+          
+          <textarea
+            readOnly
+            value={shareText}
+            className="w-full bg-[#0f0c29] border border-[rgba(164,144,194,0.2)] rounded-lg p-3 text-sm text-[#a490c2] resize-none h-24"
+          />
+          
+          <div className="flex gap-3 mt-4">
+            <button
+              onClick={() => navigator.clipboard?.writeText(shareText)}
+              className="flex-1 bg-[#4a4e8f] text-[#e6e6fa] py-2 rounded-lg hover:bg-[#5a5e9f] transition-colors text-sm font-medium"
+            >
+              Copy Text
+            </button>
+            <button
+              onClick={() => {
+                const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+                window.open(url, '_blank');
+              }}
+              className="flex-1 bg-[#1da1f2] text-white py-2 rounded-lg hover:bg-[#1a91da] transition-colors text-sm font-medium"
+            >
+              Tweet
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
