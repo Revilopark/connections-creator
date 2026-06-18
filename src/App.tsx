@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { nodes, findPaths, getEdgesForPath, generateNarrative, generateSerendipityScore, nodeColorMap, Node, Edge } from './lib/graphData';
+import { api, APIPath } from './lib/api';
 import { ConnectionPath } from './components/ConnectionPath';
 import { ShareCard } from './components/ShareCard';
-import { Search, Shuffle, Share2, BookOpen, Sparkles, Zap, Eye, Flame, Gem, ArrowRight } from 'lucide-react';
+import { Search, Shuffle, Share2, BookOpen, Sparkles, Zap, Eye, Flame, Gem, ArrowRight, Server, ServerOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function App() {
@@ -18,33 +19,77 @@ export default function App() {
   const [minSteps, setMinSteps] = useState(5);
   const [maxSteps, setMaxSteps] = useState(10);
 
-  const handleSearch = useCallback(() => {
+  const [apiAvailable, setApiAvailable] = useState<boolean | null>(null);
+  const [apiNodes, setApiNodes] = useState<Node[] | null>(null);
+
+  // Check API availability on mount
+  useEffect(() => {
+    api.checkAvailability().then(setApiAvailable);
+  }, []);
+
+  // Load nodes from API if available
+  useEffect(() => {
+    if (apiAvailable) {
+      api.getNodes().then(setApiNodes).catch(() => setApiAvailable(false));
+    }
+  }, [apiAvailable]);
+
+  const displayNodes = apiNodes || nodes;
+
+  const handleSearch = useCallback(async () => {
     if (!startId || !endId) return;
     setIsSearching(true);
     setPaths([]);
     setSelectedPath(null);
     setNarrative('');
-    
-    setTimeout(() => {
-      const found = findPaths(startId, endId, minSteps, maxSteps);
-      setPaths(found);
-      if (found.length > 0) {
-        selectPath(found[0]);
-      }
-      setIsSearching(false);
-    }, 800);
-  }, [startId, endId, minSteps, maxSteps]);
 
-  const selectPath = useCallback((path: Node[]) => {
+    if (apiAvailable) {
+      try {
+        const response = await api.findPaths(startId, endId, minSteps, maxSteps);
+        const convertedPaths: Node[][] = response.paths.map(p => p.nodes);
+        setPaths(convertedPaths);
+        if (convertedPaths.length > 0) {
+          selectPath(convertedPaths[0], response.paths[0].edges, response.paths[0].scores);
+        }
+      } catch {
+        // Fallback to local
+        const found = findPaths(startId, endId, minSteps, maxSteps);
+        setPaths(found);
+        if (found.length > 0) selectPath(found[0]);
+      }
+    } else {
+      setTimeout(() => {
+        const found = findPaths(startId, endId, minSteps, maxSteps);
+        setPaths(found);
+        if (found.length > 0) selectPath(found[0]);
+      }, 800);
+    }
+    setIsSearching(false);
+  }, [startId, endId, minSteps, maxSteps, apiAvailable]);
+
+  const selectPath = useCallback((path: Node[], edges?: Edge[], apiScores?: APIPath['scores']) => {
     setSelectedPath(path);
-    const edges = getEdgesForPath(path);
-    setSelectedEdges(edges);
-    setNarrative(generateNarrative(path, edges));
-    setScores(generateSerendipityScore(path, edges));
+    if (edges) {
+      setSelectedEdges(edges);
+    } else {
+      setSelectedEdges(getEdgesForPath(path));
+    }
+    setNarrative(generateNarrative(path, edges || getEdgesForPath(path)));
+    if (apiScores) {
+      setScores({
+        serendipity: apiScores.serendipity / 100,
+        curiosity: apiScores.curiosity / 100,
+        synchronicity: apiScores.synchronicity / 100,
+        fortuity: apiScores.fortuity / 100,
+        materiality: apiScores.materiality / 100,
+      });
+    } else {
+      setScores(generateSerendipityScore(path, edges || getEdgesForPath(path)));
+    }
   }, []);
 
   const handleRandom = useCallback(() => {
-    const inventions = nodes.filter(n => n.type === 'invention');
+    const inventions = displayNodes.filter(n => n.type === 'invention');
     const idx1 = Math.floor(Math.random() * inventions.length);
     let idx2 = Math.floor(Math.random() * inventions.length);
     while (idx1 === idx2) idx2 = Math.floor(Math.random() * inventions.length);
@@ -58,13 +103,31 @@ export default function App() {
       setNarrative('');
       
       setTimeout(() => {
-        const found = findPaths(inventions[idx1].id, inventions[idx2].id, minSteps, maxSteps);
-        setPaths(found);
-        if (found.length > 0) selectPath(found[0]);
-        setIsSearching(false);
+        if (apiAvailable) {
+          api.findPaths(inventions[idx1].id, inventions[idx2].id, minSteps, maxSteps)
+            .then(response => {
+              const convertedPaths: Node[][] = response.paths.map(p => p.nodes);
+              setPaths(convertedPaths);
+              if (convertedPaths.length > 0) {
+                selectPath(convertedPaths[0], response.paths[0].edges, response.paths[0].scores);
+              }
+              setIsSearching(false);
+            })
+            .catch(() => {
+              const found = findPaths(inventions[idx1].id, inventions[idx2].id, minSteps, maxSteps);
+              setPaths(found);
+              if (found.length > 0) selectPath(found[0]);
+              setIsSearching(false);
+            });
+        } else {
+          const found = findPaths(inventions[idx1].id, inventions[idx2].id, minSteps, maxSteps);
+          setPaths(found);
+          if (found.length > 0) selectPath(found[0]);
+          setIsSearching(false);
+        }
       }, 600);
     }, 100);
-  }, [minSteps, maxSteps, selectPath]);
+  }, [minSteps, maxSteps, selectPath, apiAvailable, displayNodes]);
 
   return (
     <div className="min-h-screen bg-[#050510] text-[#e2e8f0] font-outfit relative">
@@ -90,6 +153,18 @@ export default function App() {
           </p>
         </motion.header>
 
+        {/* Connection Status */}
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex justify-center mb-4"
+        >
+          <div className={`flex items-center gap-2 text-xs px-3 py-1 rounded-full border ${apiAvailable === true ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-400' : apiAvailable === false ? 'bg-amber-950/30 border-amber-800/50 text-amber-400' : 'bg-[#0a0a1a] border-[#1e293b] text-[#475569]'}`}>
+            {apiAvailable === true ? <Server className="w-3 h-3" /> : apiAvailable === false ? <ServerOff className="w-3 h-3" /> : <div className="w-3 h-3 rounded-full bg-[#475569] animate-pulse" />}
+            {apiAvailable === true ? 'Connected to MCP Server' : apiAvailable === false ? 'Offline Mode' : 'Checking connection...'}
+          </div>
+        </motion.div>
+
         {/* Search Panel */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -108,7 +183,7 @@ export default function App() {
                 className="w-full bg-[#050510] border border-[#1e293b] rounded-lg px-4 py-3 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#c9a227] transition-colors"
               >
                 <option value="">Select an invention...</option>
-                {nodes.filter(n => n.type === 'invention').map(n => (
+                {displayNodes.filter(n => n.type === 'invention').map(n => (
                   <option key={n.id} value={n.id}>{n.name} ({n.year > 0 ? n.year : `${Math.abs(n.year)} BC`})</option>
                 ))}
               </select>
@@ -123,7 +198,7 @@ export default function App() {
                 className="w-full bg-[#050510] border border-[#1e293b] rounded-lg px-4 py-3 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#c9a227] transition-colors"
               >
                 <option value="">Select an invention...</option>
-                {nodes.filter(n => n.type === 'invention').map(n => (
+                {displayNodes.filter(n => n.type === 'invention').map(n => (
                   <option key={n.id} value={n.id}>{n.name} ({n.year > 0 ? n.year : `${Math.abs(n.year)} BC`})</option>
                 ))}
               </select>
